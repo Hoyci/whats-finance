@@ -3,53 +3,52 @@ package handler
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hoyci/whats-finance/internal/processor"
+	googlesheets "github.com/hoyci/whats-finance/pkg/google-sheets"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
-// Handler de Mensagens
 type MessageHandler struct {
 	TargetJID        types.JID
 	ChatGPTProcessor *processor.ChatGPTProcessor
+	SheetsService    *googlesheets.SheetsService
 	WaClient         *whatsmeow.Client
+	SheetName        string
 }
 
-// NewMessageHandler cria e retorna um novo handler
-func NewMessageHandler(waClient *whatsmeow.Client, targetJID string, chatGPTProcessor *processor.ChatGPTProcessor) (*MessageHandler, error) {
-	// jid, err := types.ParseJID(fmt.Sprintf(`%s@s.whatsapp.net`, targetJID))
+func NewMessageHandler(
+	waClient *whatsmeow.Client,
+	targetJID string,
+	chatGPTProcessor *processor.ChatGPTProcessor,
+	sheetsService *googlesheets.SheetsService,
+	sheetName string,
+) (*MessageHandler, error) {
 	jid := types.NewJID(targetJID, types.DefaultUserServer)
-	fmt.Println("JID", jid.String())
-	// if err != nil {
-	// 	return nil, fmt.Errorf("invalid target JID: %w", err)
-	// }
 
 	return &MessageHandler{
 		WaClient:         waClient,
 		TargetJID:        jid,
 		ChatGPTProcessor: chatGPTProcessor,
+		SheetsService:    sheetsService,
+		SheetName:        sheetName,
 	}, nil
 }
 
-// HandleMessage é a função principal que processa os eventos recebidos
 func (h *MessageHandler) HandleMessage(evt any) {
-	// A mensagem vem como um evento do tipo *event.MessageInfo
 	msg, ok := evt.(*events.Message)
 	fmt.Println("msg", msg)
 	if !ok {
-		return // Ignora eventos que não são de mensagem
-	}
-
-	// Filtra a mensagem para garantir que ela venha do contato desejado
-	if msg.Info.IsGroup {
-		fmt.Println("cai aqui")
 		return
 	}
 
-	fmt.Println("cheguei aqui")
+	if msg.Info.IsGroup {
+		return
+	}
 
 	messageText := getMessageText(msg.Message)
 	if messageText == "" {
@@ -68,12 +67,17 @@ func (h *MessageHandler) processAndRespond(sender types.JID, message string) {
 		return
 	}
 
-	confirmationMessage := fmt.Sprintf("Receita/despesa registrada: %s de R$%.2f (Descrição: %s).", sheetData.Tipo, sheetData.Valor, sheetData.Descricao)
-	h.sendWhatsAppMessage(sender, confirmationMessage)
+	err = h.appendWithRetry(sheetData)
+	if err != nil {
+		fmt.Printf("Erro ao inserir dados na planilha após múltiplas tentativas: %v\n", err)
+		h.sendWhatsAppMessage(sender, "Sua transação foi processada, mas não foi possível registrá-la na planilha. Por favor, anote os detalhes e tente novamente mais tarde.")
+		return
+	}
+
+	h.sendWhatsAppMessage(sender, sheetData.Retorno)
 }
 
 func (h *MessageHandler) sendWhatsAppMessage(to types.JID, text string) {
-	// Use a nova struct waProto.Message
 	_, err := h.WaClient.SendMessage(
 		context.Background(),
 		to,
@@ -91,20 +95,40 @@ func getMessageText(msg *waE2E.Message) string {
 		return ""
 	}
 
-	// Check for a simple text conversation
 	if msg.GetConversation() != "" {
 		return msg.GetConversation()
 	}
 
-	// Check for an extended text message
 	if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
 		return extendedText.GetText()
 	}
 
-	// Check for a message with a button reply
 	if btnReply := msg.GetButtonsResponseMessage(); btnReply != nil {
 		return btnReply.GetSelectedDisplayText()
 	}
 
 	return ""
+}
+
+func (h *MessageHandler) appendWithRetry(data *processor.SheetData) error {
+	const maxRetries = 3
+	var err error
+
+	err = h.SheetsService.EnsureSheetExists(h.SheetName)
+	if err != nil {
+		return fmt.Errorf("falha ao garantir a existência da aba '%s': %w", h.SheetName, err)
+	}
+
+	for i := range maxRetries {
+		err = h.SheetsService.AppendRow(h.SheetName, data)
+		if err == nil {
+			fmt.Printf("Dados inseridos com sucesso na planilha '%s'.\n", h.SheetName)
+			return nil
+		}
+
+		fmt.Printf("Falha na tentativa %d/%d ao inserir dados: %v. Tentando novamente em %d segundos...\n", i+1, maxRetries, err, (i+1)*2)
+		time.Sleep(time.Duration(i+1) * 2 * time.Second)
+	}
+
+	return fmt.Errorf("todas as %d tentativas de inserir dados na planilha falharam: %w", maxRetries, err)
 }

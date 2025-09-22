@@ -16,6 +16,7 @@ type Config struct {
 	ChatGPTApiKey string `mapstructure:"CHATGPT_API_KEY"`
 	GoogleSheetID string `mapstructure:"GOOGLE_SHEET_ID"`
 	PhoneNumber   string `mapstructure:"PHONE_NUMBER"`
+	SheetName     string `mapstructure:"SHEET_NAME"`
 }
 
 func GetConfig() *Config {

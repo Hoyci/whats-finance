@@ -14,6 +14,7 @@ type SheetData struct {
 	Valor     float64 `json:"valor"`
 	Descricao string  `json:"descricao"`
 	Data      string  `json:"data"`
+	Retorno   string  `json:"retorno"`
 }
 
 type chatGPTRequest struct {
@@ -45,23 +46,33 @@ func NewChatGPTProcessor(apiKey string) *ChatGPTProcessor {
 
 func (p *ChatGPTProcessor) ProcessMessage(message string) (*SheetData, error) {
 	prompt := fmt.Sprintf(`
-Você é um assistente financeiro. Analise a seguinte mensagem do usuário, que se refere a uma receita ou despesa.
-Retorne um JSON com os seguintes campos: 'tipo' (receita/despesa), 'valor', 'descricao' e 'data'.
-A data deve ser no formato 'dd/mm/aaaa'. Se a data não for especificada, use a data de hoje.
+Você é um assistente financeiro divertido e organizado.
+Analise a mensagem do usuário (que pode ser uma receita ou despesa) e **retorne sempre um JSON válido, bem formatado, sem texto adicional**.
 
-Exemplos:
-- Mensagem: "Paguei o almoço hoje, foi 25 reais."
-  JSON: {"tipo":"despesa","valor":25,"descricao":"almoço","data":"%s"}
+O JSON deve conter os seguintes campos obrigatórios:
+* **tipo**: "receita" ou "despesa"
+* **valor**: número em reais (sem "R\$")
+* **descricao**: resumo curto do gasto ou receita
+* **data**: formato "dd/mm/aaaa" (se não especificado, usar a data de hoje)
+* **categoria**: uma entre \["alimentação", "transporte", "moradia", "lazer", "saúde", "outros"]
+* **retorno**: uma frase divertida e bem jovial, entre 20 e 50 palavras, com emojis, mencionando o tipo de movimentação, o valor, a descrição e a categoria.
 
-- Mensagem: "Recebi o pagamento do cliente, 500 reais."
-  JSON: {"tipo":"receita","valor":500,"descricao":"pagamento do cliente","data":"%s"}
+O JSON sempre deve estar formatado e pronto para ser unmarshallized! Em hipótese alguma ele deve estar fora do formato padrão de JSON.
+### Exemplos:
 
-- Mensagem: "Comprei um livro por 50 na semana passada."
-  JSON: {"tipo":"despesa","valor":50,"descricao":"compra de livro","data":"%s"}
+Mensagem: "Paguei o almoço hoje, foi 25 reais."
+JSON:
+{"tipo":"despesa","valor":25,"descricao":"almoço","data":"%s","categoria":"alimentação","retorno":"📉 Você torrou R$25,00 em Alimentação 🍽️. Um rango top que deixou o bolso mais leve 💸, mas valeu a pena pra matar a fome e curtir o momento 😋🔥"}
+
+Mensagem: "Recebi o pagamento do cliente, 500 reais."
+JSON:
+{"tipo":"receita","valor":500,"descricao":"pagamento do cliente","data":"%s","categoria":"outros","retorno":"📈 R$500,00 de Receita chegaram no seu caixa 💼🚀. É aquele up na conta que anima o dia, enche o bolso e dá até vontade de comemorar com um rolê 🎉💰"}
+
+Mensagem: "Comprei um livro por 50 na semana passada."
+JSON:
+{"tipo":"despesa","valor":50,"descricao":"compra de livro","data":"%s","categoria":"lazer","retorno":"📉 Você gastou R$50,00 em Lazer 📚. Investiu numa boa leitura que vai abrir a mente 🤓✨. O bolso chora um pouquinho 💸, mas o cérebro agradece muito 📖🔥"}
 
 Mensagem do usuário: "%s"
-
-Lembre-se de retornar apenas o JSON, sem texto adicional.
 `, time.Now().Format("02/01/2006"), time.Now().Format("02/01/2006"), time.Now().AddDate(0, 0, -7).Format("02/01/2006"), message)
 
 	requestBody := chatGPTRequest{

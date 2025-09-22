@@ -7,6 +7,7 @@ import (
 	"github.com/hoyci/whats-finance/internal/config"
 	"github.com/hoyci/whats-finance/internal/handler"
 	"github.com/hoyci/whats-finance/internal/processor"
+	googlesheets "github.com/hoyci/whats-finance/pkg/google-sheets"
 	"github.com/hoyci/whats-finance/pkg/whatsapp"
 )
 
@@ -23,9 +24,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	sheetsService, err := googlesheets.NewSheetsService("credentials.json", cfg.GoogleSheetID)
+	if err != nil {
+		fmt.Printf("Falha ao inicializar o cliente do Google Sheets: %v\n", err)
+		os.Exit(1)
+	}
+
 	chatGPTProcessor := processor.NewChatGPTProcessor(cfg.ChatGPTApiKey)
 
-	msgHandler, err := handler.NewMessageHandler(waClient, cfg.PhoneNumber, chatGPTProcessor)
+	msgHandler, err := handler.NewMessageHandler(
+		waClient,
+		cfg.PhoneNumber,
+		chatGPTProcessor,
+		sheetsService,
+		cfg.SheetName,
+	)
 	if err != nil {
 		fmt.Printf("Falha ao criar o handler de mensagens: %v\n", err)
 		os.Exit(1)

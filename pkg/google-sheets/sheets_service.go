@@ -67,7 +67,7 @@ func (s *SheetsService) EnsureSheetExists(sheetName string) error {
 
 	for _, sheet := range resp.Sheets {
 		if sheet.Properties.Title == sheetName {
-			return nil // A aba já existe
+			return nil
 		}
 	}
 
