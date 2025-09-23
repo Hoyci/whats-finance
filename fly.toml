@@ -1,0 +1,5 @@
+app = "whats-finance"
+primary_region = "gru"
+
+[build]
+  dockerfile = "dockerfile"
