@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/hoyci/whats-finance/internal/processor"
 	"golang.org/x/oauth2/google"
@@ -18,15 +17,10 @@ type SheetsService struct {
 	spreadsheetID string
 }
 
-func NewSheetsService(credentialsFile, spreadsheetID string) (*SheetsService, error) {
+func NewSheetsService(credentialsJSON, spreadsheetID string) (*SheetsService, error) {
 	ctx := context.Background()
 
-	b, err := os.ReadFile(credentialsFile)
-	if err != nil {
-		return nil, fmt.Errorf("falha ao ler o arquivo de credenciais: %w", err)
-	}
-
-	config, err := google.JWTConfigFromJSON(b, sheets.SpreadsheetsScope)
+	config, err := google.JWTConfigFromJSON([]byte(credentialsJSON), sheets.SpreadsheetsScope)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao configurar o cliente JWT: %w", err)
 	}
@@ -47,7 +41,7 @@ func NewSheetsService(credentialsFile, spreadsheetID string) (*SheetsService, er
 
 func (s *SheetsService) AppendRow(sheetName string, data *processor.SheetData) error {
 	var vr sheets.ValueRange
-	vr.Values = append(vr.Values, []any{data.Data, data.Tipo, data.Valor, data.Descricao})
+	vr.Values = append(vr.Values, []any{data.Data, data.Tipo, data.Valor, data.Descricao, data.Categoria})
 
 	_, err := s.sheetsService.Spreadsheets.Values.Append(s.spreadsheetID, fmt.Sprintf("%s!A:D", sheetName), &vr).
 		ValueInputOption("RAW").Do()
@@ -55,7 +49,6 @@ func (s *SheetsService) AppendRow(sheetName string, data *processor.SheetData) e
 		return fmt.Errorf("falha ao adicionar a linha à planilha: %w", err)
 	}
 
-	fmt.Printf("Dados adicionados com sucesso à planilha: %s\n", sheetName)
 	return nil
 }
 

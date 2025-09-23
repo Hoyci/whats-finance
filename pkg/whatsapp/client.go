@@ -15,10 +15,15 @@ import (
 	"github.com/mdp/qrterminal"
 )
 
-func InitializeClient() (*whatsmeow.Client, error) {
+func InitializeClient(dbPath string) (*whatsmeow.Client, error) {
 	dbLog := waLog.Stdout("Database", "INFO", true)
 	ctx := context.Background()
-	container, err := sqlstore.New(ctx, "sqlite3", "file:session.db?_foreign_keys=on", dbLog)
+
+	if dbPath == "" {
+		dbPath = "session.db"
+	}
+
+	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", dbPath), dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("falha ao criar o container de armazenamento: %w", err)
 	}

@@ -41,7 +41,6 @@ func NewMessageHandler(
 
 func (h *MessageHandler) HandleMessage(evt any) {
 	msg, ok := evt.(*events.Message)
-	fmt.Println("msg", msg)
 	if !ok {
 		return
 	}

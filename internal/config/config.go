@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"log"
+	"os"
 	"sync"
 
-	"github.com/spf13/viper"
+	"github.com/joho/godotenv"
 )
 
 var (
@@ -13,25 +15,35 @@ var (
 )
 
 type Config struct {
-	ChatGPTApiKey string `mapstructure:"CHATGPT_API_KEY"`
-	GoogleSheetID string `mapstructure:"GOOGLE_SHEET_ID"`
-	PhoneNumber   string `mapstructure:"PHONE_NUMBER"`
-	SheetName     string `mapstructure:"SHEET_NAME"`
+	ChatGPTApiKey   string
+	GoogleSheetID   string
+	PhoneNumber     string
+	SheetName       string
+	CredentialsJSON string
+	DBPath          string
 }
 
 func GetConfig() *Config {
 	once.Do(func() {
-		viper.SetConfigName(".env")
-		viper.SetConfigType("env")
-		viper.AddConfigPath(".")
-		viper.AutomaticEnv()
-
-		if err := viper.ReadInConfig(); err != nil {
-			log.Fatalf("error reading config file, %s", err)
+		if err := godotenv.Load(); err != nil {
+			fmt.Println("Nenhum arquivo .env encontrado ou erro ao carregar.")
 		}
 
-		if err := viper.Unmarshal(&config); err != nil {
-			log.Fatalf("error unmarshalling config, %s", err)
+		config = &Config{
+			ChatGPTApiKey:   os.Getenv("CHATGPT_API_KEY"),
+			GoogleSheetID:   os.Getenv("GOOGLE_SHEET_ID"),
+			PhoneNumber:     os.Getenv("PHONE_NUMBER"),
+			SheetName:       os.Getenv("SHEET_NAME"),
+			CredentialsJSON: os.Getenv("CREDENTIALS_JSON"),
+			DBPath:          os.Getenv("DB_PATH"),
+		}
+
+		if config.ChatGPTApiKey == "" ||
+			config.GoogleSheetID == "" ||
+			config.PhoneNumber == "" ||
+			config.SheetName == "" ||
+			config.CredentialsJSON == "" {
+			log.Fatal("Variável de ambiente não foi definida.")
 		}
 	})
 

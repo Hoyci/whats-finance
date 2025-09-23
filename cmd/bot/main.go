@@ -18,13 +18,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	waClient, err := whatsapp.InitializeClient()
+	waClient, err := whatsapp.InitializeClient(cfg.DBPath)
 	if err != nil {
 		fmt.Printf("Falha ao inicializar o cliente do WhatsApp: %v\n", err)
 		os.Exit(1)
 	}
 
-	sheetsService, err := googlesheets.NewSheetsService("credentials.json", cfg.GoogleSheetID)
+	sheetsService, err := googlesheets.NewSheetsService(cfg.CredentialsJSON, cfg.GoogleSheetID)
 	if err != nil {
 		fmt.Printf("Falha ao inicializar o cliente do Google Sheets: %v\n", err)
 		os.Exit(1)

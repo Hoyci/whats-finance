@@ -15,6 +15,7 @@ type SheetData struct {
 	Descricao string  `json:"descricao"`
 	Data      string  `json:"data"`
 	Retorno   string  `json:"retorno"`
+	Categoria string  `json:"categoria"`
 }
 
 type chatGPTRequest struct {
@@ -38,7 +39,6 @@ type ChatGPTProcessor struct {
 }
 
 func NewChatGPTProcessor(apiKey string) *ChatGPTProcessor {
-	fmt.Println("apiKey", apiKey)
 	return &ChatGPTProcessor{
 		apiKey: apiKey,
 	}
