@@ -46,23 +46,23 @@ func (h *BotHandler) InitializeBot() {
 }
 
 func (h *BotHandler) processMessageAndRespond(event *events.Message) {
-	from := event.Info.Sender
 	msg := h.handleIncomingMessage(event)
+
 	sheetData, err := h.chatGPTProcessor.ProcessMessage(msg)
 	if err != nil {
 		fmt.Printf("Erro ao processar mensagem com ChatGPT: %v\n", err)
-		h.handleOutgoingMessage(from, "Desculpe, não consegui processar sua solicitação agora. Tente novamente mais tarde.")
+		h.handleOutgoingMessage(h.targetJID, "Desculpe, não consegui processar sua solicitação agora. Tente novamente mais tarde.")
 		return
 	}
 
 	err = h.appendWithRetry(sheetData)
 	if err != nil {
 		fmt.Printf("Erro ao inserir dados na planilha após múltiplas tentativas: %v\n", err)
-		h.handleOutgoingMessage(from, "Sua transação foi processada, mas não foi possível registrá-la na planilha. Por favor, anote os detalhes e tente novamente mais tarde.")
+		h.handleOutgoingMessage(h.targetJID, "Sua transação foi processada, mas não foi possível registrá-la na planilha. Por favor, anote os detalhes e tente novamente mais tarde.")
 		return
 	}
 
-	h.handleOutgoingMessage(from, sheetData.Retorno)
+	h.handleOutgoingMessage(h.targetJID, sheetData.Retorno)
 }
 
 func (h *BotHandler) appendWithRetry(data *processor.SheetData) error {
