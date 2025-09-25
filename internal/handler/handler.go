@@ -3,125 +3,81 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/hoyci/whats-finance/internal/processor"
 	googlesheets "github.com/hoyci/whats-finance/pkg/google-sheets"
-	"go.mau.fi/whatsmeow"
+	"github.com/hoyci/whats-finance/pkg/whatsapp"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
-type MessageHandler struct {
-	TargetJID        types.JID
-	ChatGPTProcessor *processor.ChatGPTProcessor
-	SheetsService    *googlesheets.SheetsService
-	WaClient         *whatsmeow.Client
-	SheetName        string
+type BotHandler struct {
+	whatsappClient   *whatsapp.WhatsappClient
+	chatGPTProcessor *processor.ChatGPTProcessor
+	sheetsService    *googlesheets.SheetsService
+	sheetName        string
+	targetJID        types.JID
 }
 
-func NewMessageHandler(
-	waClient *whatsmeow.Client,
-	targetJID string,
+func NewBotHandler(
+	whatsappClient *whatsapp.WhatsappClient,
 	chatGPTProcessor *processor.ChatGPTProcessor,
 	sheetsService *googlesheets.SheetsService,
 	sheetName string,
-) (*MessageHandler, error) {
+	targetJID string,
+) *BotHandler {
 	jid := types.NewJID(targetJID, types.DefaultUserServer)
 
-	return &MessageHandler{
-		WaClient:         waClient,
-		TargetJID:        jid,
-		ChatGPTProcessor: chatGPTProcessor,
-		SheetsService:    sheetsService,
-		SheetName:        sheetName,
-	}, nil
+	return &BotHandler{
+		whatsappClient:   whatsappClient,
+		chatGPTProcessor: chatGPTProcessor,
+		sheetsService:    sheetsService,
+		sheetName:        sheetName,
+		targetJID:        jid,
+	}
 }
 
-func (h *MessageHandler) HandleMessage(evt any) {
-	msg, ok := evt.(*events.Message)
-	if !ok {
-		return
-	}
-
-	if msg.Info.IsGroup {
-		return
-	}
-
-	messageText := getMessageText(msg.Message)
-	if messageText == "" {
-		return
-	}
-
-	fmt.Printf("Mensagem recebida de %s: \"%s\"\n", msg.Info.Sender.User, messageText)
-	go h.processAndRespond(h.TargetJID, messageText)
+func (h *BotHandler) InitializeBot() {
+	h.whatsappClient.Client.AddEventHandler(h.eventHandler)
+	h.handleShutdown()
 }
 
-func (h *MessageHandler) processAndRespond(sender types.JID, message string) {
-	sheetData, err := h.ChatGPTProcessor.ProcessMessage(message)
+func (h *BotHandler) processMessageAndRespond(event *events.Message) {
+	from := event.Info.Sender
+	msg := h.handleIncomingMessage(event)
+	sheetData, err := h.chatGPTProcessor.ProcessMessage(msg)
 	if err != nil {
 		fmt.Printf("Erro ao processar mensagem com ChatGPT: %v\n", err)
-		h.sendWhatsAppMessage(sender, "Desculpe, não consegui processar sua solicitação agora. Tente novamente mais tarde.")
+		h.handleOutgoingMessage(from, "Desculpe, não consegui processar sua solicitação agora. Tente novamente mais tarde.")
 		return
 	}
 
 	err = h.appendWithRetry(sheetData)
 	if err != nil {
 		fmt.Printf("Erro ao inserir dados na planilha após múltiplas tentativas: %v\n", err)
-		h.sendWhatsAppMessage(sender, "Sua transação foi processada, mas não foi possível registrá-la na planilha. Por favor, anote os detalhes e tente novamente mais tarde.")
+		h.handleOutgoingMessage(from, "Sua transação foi processada, mas não foi possível registrá-la na planilha. Por favor, anote os detalhes e tente novamente mais tarde.")
 		return
 	}
 
-	h.sendWhatsAppMessage(sender, sheetData.Retorno)
+	h.handleOutgoingMessage(from, sheetData.Retorno)
 }
 
-func (h *MessageHandler) sendWhatsAppMessage(to types.JID, text string) {
-	_, err := h.WaClient.SendMessage(
-		context.Background(),
-		to,
-		&waE2E.Message{
-			Conversation: &text,
-		},
-	)
-	if err != nil {
-		fmt.Printf("Erro ao enviar mensagem para %s: %v\n", to, err)
-	}
-}
-
-func getMessageText(msg *waE2E.Message) string {
-	if msg == nil {
-		return ""
-	}
-
-	if msg.GetConversation() != "" {
-		return msg.GetConversation()
-	}
-
-	if extendedText := msg.GetExtendedTextMessage(); extendedText != nil {
-		return extendedText.GetText()
-	}
-
-	if btnReply := msg.GetButtonsResponseMessage(); btnReply != nil {
-		return btnReply.GetSelectedDisplayText()
-	}
-
-	return ""
-}
-
-func (h *MessageHandler) appendWithRetry(data *processor.SheetData) error {
+func (h *BotHandler) appendWithRetry(data *processor.SheetData) error {
 	const maxRetries = 3
 	var err error
 
-	err = h.SheetsService.EnsureSheetExists(h.SheetName)
+	err = h.sheetsService.EnsureSheetExists(h.sheetName)
 	if err != nil {
-		return fmt.Errorf("falha ao garantir a existência da aba '%s': %w", h.SheetName, err)
+		return fmt.Errorf("falha ao garantir a existência da aba '%s': %w", h.sheetName, err)
 	}
 
 	for i := range maxRetries {
-		err = h.SheetsService.AppendRow(h.SheetName, data)
+		err = h.sheetsService.AppendRow(h.sheetName, data)
 		if err == nil {
-			fmt.Printf("Dados inseridos com sucesso na planilha '%s'.\n", h.SheetName)
+			fmt.Printf("Dados inseridos com sucesso na planilha '%s'.\n", h.sheetName)
 			return nil
 		}
 
@@ -130,4 +86,55 @@ func (h *MessageHandler) appendWithRetry(data *processor.SheetData) error {
 	}
 
 	return fmt.Errorf("todas as %d tentativas de inserir dados na planilha falharam: %w", maxRetries, err)
+}
+
+func (c *BotHandler) handleIncomingMessage(event *events.Message) string {
+	if event.Info.IsFromMe || event.Info.IsGroup {
+		return ""
+	}
+
+	msg := event.Message.GetConversation()
+	if msg == "" {
+		if mediaMsg := event.Message.GetExtendedTextMessage().GetText(); mediaMsg != "" {
+			msg = mediaMsg
+		} else {
+			return ""
+		}
+	}
+
+	fmt.Printf("Mensagem recebida de %s: \"%s\"\n", event.Info.Sender.User, msg)
+	return msg
+}
+
+func (h *BotHandler) handleOutgoingMessage(to types.JID, msg string) {
+	ctx := context.Background()
+	res, err := h.whatsappClient.Client.SendMessage(
+		ctx,
+		to,
+		&waE2E.Message{
+			Conversation: &msg,
+		},
+	)
+	if err != nil {
+		fmt.Printf("Erro ao enviar mensagem para %s: %v\n", to, err)
+	}
+
+	fmt.Printf("Messagem enviada com sucesso! %+v", res)
+}
+
+func (h *BotHandler) eventHandler(evt any) {
+	switch e := evt.(type) {
+	case *events.Connected:
+		log.Println("Connected successfully")
+	case *events.Disconnected:
+		log.Println("Disconnected, trying to reconnect")
+		go h.whatsappClient.ConnectionManager()
+	case *events.Message:
+		h.processMessageAndRespond(e)
+	}
+}
+
+func (h *BotHandler) handleShutdown() {
+	h.whatsappClient.WaitForShutdown()
+	fmt.Println("Bot desligado com sucesso.")
 }
